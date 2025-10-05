@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MeteorViz - AI Simulation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
+    
+    <style>
+        #map { height: 400px; }
+        .map-legend { padding: 6px 8px; font: 14px/16px Arial, Helvetica, sans-serif; background: rgba(255,255,255,0.8); box-shadow: 0 0 15px rgba(0,0,0,0.2); border-radius: 5px; color: #333; }
+        .map-legend .legend-item { display: flex; align-items: center; margin-bottom: 4px; }
+        .map-legend .color-box { width: 18px; height: 18px; margin-right: 8px; border: 1px solid #777; }
+        #search-results-list { max-height: 200px; overflow-y: auto; background-color: #4b5563; border-radius: 5px; }
+        .result-item { padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #374151; }
+        .result-item:hover { background-color: #6b7280; }
+        .result-item.selected { background-color: #06b6d4; font-weight: bold; }
+        .result-item small { color: #d1d5db; }
+        body { background-color: #000000 !important; }
+        #meteor-background { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -10; overflow: hidden; background-color: #000000; }
+        .main-container { border: 2px solid #000000; box-shadow: 0 0 30px rgba(0, 0, 0, 0.4); border-radius: 1rem; padding: 2rem; margin-top: 1rem; margin-bottom: 1rem; background-color: rgba(17, 24, 39, 0.9); }
+    </style>
+</head>
+<body class="bg-gray-900 text-white p-4 md:p-8 font-sans">
+
+<div id="meteor-background"></div>
+
+<div class="max-w-7xl mx-auto relative z-10 main-container">
+    <h1 class="text-4xl font-bold mb-4 text-cyan-400">MeteorViz Project <span class="text-xl text-amber-400">AI-Powered</span></h1>
+    <p class="mb-6 text-gray-300">
+        Explore well-known asteroids or find new ones. The simulation uses a trained AI model for predictions.
+    </p>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="lg:col-span-1 bg-gray-800 p-6 rounded-lg shadow-lg">
+            <h2 class="text-2xl mb-4">Control Panel</h2>
+            
+            <div class="bg-gray-700 p-4 rounded-md">
+                <h3 class="text-lg font-semibold mb-2 text-cyan-300">1. Asteroid Selection</h3>
+                <div class="flex items-center space-x-2">
+                    <input type="text" id="search-input" placeholder="Search by Asteroid Name or ID" class="w-full bg-gray-600 p-2 rounded">
+                    <button id="search-btn" class="bg-cyan-600 hover:bg-cyan-700 p-2 rounded">Search</button>
+                </div>
+                <p id="search-status" class="text-xs text-cyan-300 h-4 mt-1"></p>
+                <div class="mt-2">
+                    <label>Results / Known Asteroids:</label>
+                    <div id="search-results-list" class="mt-1 border border-gray-500 rounded"></div>
+                </div>
+            </div>
+
+            <div class="bg-gray-700 p-4 rounded-md mt-4">
+                <h3 class="text-lg font-semibold mb-2 text-cyan-300">2. Impact Parameters (for AI Model)</h3>
+                <p class="text-xs text-gray-400 mb-2">Select an asteroid to auto-fill parameters.</p>
+                <div>
+                    <label for="mass" class="block text-sm font-medium">Mass (kg):</label>
+                    <input type="number" id="mass" class="w-full bg-gray-600 p-2 rounded mt-1" readonly>
+                </div>
+                <div class="mt-2">
+                    <label for="velocity" class="block text-sm font-medium">Velocity (km/s):</label>
+                    <input type="number" id="velocity" class="w-full bg-gray-600 p-2 rounded mt-1" readonly>
+                </div>
+                <div class="mt-2">
+                    <label for="composition" class="block text-sm font-medium">Asteroid Composition:</label>
+                    <select id="composition" class="w-full bg-gray-600 p-2 rounded mt-1">
+                        <option value="rock">Rock</option>
+                        <option value="iron">Iron</option>
+                        <option value="ice">Ice</option>
+                    </select>
+                </div>
+                <div class="mt-2">
+                    <label for="angle_deg" class="block text-sm font-medium">Impact Angle (degrees):</label>
+                    <input type="number" id="angle_deg" value="45" class="w-full bg-gray-600 p-2 rounded mt-1">
+                </div>
+            </div>
+            
+            <button id="simulateBtn" class="mt-6 w-full bg-cyan-600 hover:bg-cyan-700 font-bold py-2 px-4 rounded transition-colors">
+                Run AI Simulation
+            </button>
+            <p id="simulation-status" class="text-amber-400 text-center mt-4 h-6"></p>
+        </div>
+
+        <div class="lg:col-span-2 bg-gray-800 p-6 rounded-lg shadow-lg">
+            <h2 class="text-2xl mb-4">Visualization & Results</h2>
+            <p class="text-sm text-gray-400 mb-4">Click on the map to set the impact point.</p>
+            <div id="map" class="rounded bg-gray-700"></div>
+
+            <div id="simulation-results" class="mt-6" style="display: none;">
+                <h3 class="text-3xl font-semibold mb-4 text-cyan-300 border-b-2 border-cyan-500 pb-2">Detailed Impact Analysis</h3>
+                
+                <div class="bg-gray-700 p-4 rounded-lg mb-4">
+                    <h4 class="text-xl font-bold text-amber-300 mb-2">Executive Summary (AI Analysis)</h4>
+                    <p id="result-summary-text" class="italic text-gray-300">Waiting for simulation results to generate AI summary...</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    
+                    <div class="bg-gray-700 p-4 rounded-lg flex flex-col md:col-span-1">
+                        <h4 class="text-lg font-bold text-amber-300 mb-2">Energy Analysis</h4>
+                        <ul class="space-y-2 text-sm flex-grow">
+                            <li>Kinetic Energy: <br><strong id="res-energy-joules" class="text-cyan-400 text-base font-mono"></strong> Joules</li>
+                            <li>TNT Equivalent: <br><strong id="res-tnt-megatons" class="text-cyan-400 text-base font-mono"></strong> Megatons</li>
+                        </ul>
+                        <div class="mt-4 pt-2 border-t border-gray-600">
+                           <h5 class="text-xs font-bold text-gray-400 mb-1">Comparison</h5>
+                             <p class="text-xs">This energy is equivalent to <strong id="res-comparison-hiroshima" class="text-yellow-400"></strong> times the Hiroshima bomb,<br>and <strong id="res-comparison-tsar" class="text-red-400"></strong> times the Tsar Bomba.</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-700 p-4 rounded-lg md:col-span-1">
+                        <h4 class="text-lg font-bold text-amber-300 mb-2">Geophysical Effects</h4>
+                        <p class="text-xs text-gray-400 mb-2">(AI Model Prediction)</p>
+                        <ul class="space-y-2 text-sm">
+                            <li>Crater Diameter: <br><strong id="res-crater-diameter" class="text-cyan-400 text-base font-mono"></strong></li>
+                            <li>Est. Crater Depth: <br><strong id="res-crater-depth" class="text-cyan-400 text-base font-mono"></strong></li>
+                            <li>Thermal Effect Radius: <br><strong id="res-thermal-radius" class="text-cyan-400 text-base font-mono"></strong></li>
+                            <li class="pt-2 border-t border-gray-600">Seismic Magnitude: <br><strong id="res-seismic-mag" class="text-cyan-400 text-base font-mono"></strong> <span class="text-xs">(Richter Scale)</span></li>
+                            <li>Seismic Impact: <br><strong id="res-seismic-desc" class="text-yellow-400 text-xs"></strong></li>
+                        </ul>
+                    </div>
+
+                    <div class="bg-gray-700 p-4 rounded-lg md:col-span-1">
+                        <h4 class="text-lg font-bold text-amber-300 mb-2">Population Impact</h4>
+                         <p class="text-xs text-gray-400 mb-2">Based on thermal effect radius</p>
+                         <p class="text-sm">Estimated Affected Population:</p>
+                         <p id="res-population" class="text-red-400 text-3xl font-bold font-mono">0</p>
+                         <div id="res-population-location" class="text-xs"></div>
+                    </div>
+
+                    <div class="bg-gray-700 p-4 rounded-lg md:col-span-3">
+                        <h4 class="text-lg font-bold text-amber-300 mb-2">Atmospheric Entry Analysis</h4>
+                        <p id="res-atmospheric-entry" class="text-sm text-gray-300"></p>
+                    </div>
+
+                    <div class="bg-gray-600 p-4 rounded-lg md:col-span-3">
+                        <h4 class="text-lg font-bold text-amber-300 mb-2">Simulation Input Parameters</h4>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                            <div><strong>Mass:</strong> <br><span id="in-mass" class="font-mono"></span> kg</div>
+                            <div><strong>Velocity:</strong> <br><span id="in-velocity" class="font-mono"></span> km/s</div>
+                            <div><strong>Angle:</strong> <br><span id="in-angle" class="font-mono"></span> degrees</div>
+                            <div><strong>Composition:</strong> <br><span id="in-composition" class="font-mono capitalize"></span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Global variables
+let map, impactMarker;
+let impactLatLng = { lat: 37.0663, lng: 36.2484 }; // Default: Kadirli Merkez
+let impactCircles = [];
+let allAsteroids = new Map();
+let currentSelectedId = null;
+
+// Constants
+const HIROSHIMA_KT = 15;
+const TSAR_BOMBA_MT = 50;
+const KT_TO_JOULES = 4.184e12;
+const DENSITY_MAP = { rock: 3000, iron: 7800, ice: 1000 };
+
+const wellKnownAsteroids = [
+    {id: "2000433", name: "433 Eros", diameter_m: 16840, velocity_kms: 24.35, mass_kg: 6.69e15, density: 2670},
+    {id: "2001036", name: "1036 Ganymed", diameter_m: 37650, velocity_kms: 16.5, mass_kg: 5e16, density: 2700},
+    {id: "2101955", name: "101955 Bennu", diameter_m: 490, velocity_kms: 28.0, mass_kg: 7.3e10, density: 1190},
+    {id: "2099942", name: "99942 Apophis", diameter_m: 370, velocity_kms: 30.7, mass_kg: 6.1e10, density: 2600},
+];
+
+// Three.js Background Variables
+let sceneBg, cameraBg, rendererBg, stars;
+
+// Event Listeners and Initializers
+document.addEventListener('DOMContentLoaded', () => {
+    initMap();
+    wellKnownAsteroids.forEach(a => allAsteroids.set(a.id, a));
+    renderAsteroidList(wellKnownAsteroids);
+
+    document.getElementById('search-btn').addEventListener('click', handleSearch);
+    document.getElementById('search-input').addEventListener('keyup', (event) => {
+        if (event.key === "Enter") handleSearch();
+    });
+    document.getElementById("simulateBtn").addEventListener("click", runSimulation);
+    document.getElementById("composition").addEventListener("change", updateMassForCurrentSelection);
+    initMeteorBackground();
+});
+
+// Helper function for number formatting
+function formatNumber(num) {
+    if (num === null || num === undefined) return 'N/A';
+    if (num === 0) return '0';
+    if (Math.abs(num) > 1e9 || (Math.abs(num) < 1e-2 && Math.abs(num) > 0)) {
+        return num.toExponential(2);
+    }
+    return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(num);
+}
+
+// MAIN SIMULATION FUNCTION
+async function runSimulation() {
+    const selectedComposition = document.getElementById("composition").value;
+    
+    const payload = {
+        latitude: impactLatLng.lat,
+        longitude: impactLatLng.lng,
+        mass_kg: parseFloat(document.getElementById("mass").value),
+        velocity_kms: parseFloat(document.getElementById("velocity").value),
+        angle_deg: parseInt(document.getElementById("angle_deg").value, 10),
+        density: DENSITY_MAP[selectedComposition]
+    };
+    
+    if (!payload.mass_kg || !payload.velocity_kms) {
+        alert("Please select an asteroid first to enter mass and velocity."); // Translated
+        return;
+    }
+    if (!impactLatLng) {
+        alert("Please select an impact point by clicking on the map."); // Translated
+        return;
+    }
+
+    const simulateBtn = document.getElementById('simulateBtn');
+    const statusEl = document.getElementById('simulation-status'); // Getting the status <p> element
+    
+    document.getElementById('simulation-results').style.display = 'none'; // Hide previous results
+    simulateBtn.textContent = 'RUNNING SIMULATION...'; // Translated
+    simulateBtn.disabled = true;
+    statusEl.textContent = 'Analyzing population data... (This process may take a while)'; // Translated
+
+    try {
+        const response = await fetch("http://127.0.0.1:5001/calculate_human_impact", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        
+        const resultData = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(resultData.error || `API Error: ${response.statusText}`); // Translated
+        }
+        
+        updateVisualizations(resultData);
+        statusEl.textContent = 'Simulation Complete. Generating AI Summary...'; // Güncellendi: AI özetini beklediğini belirtir.
+
+    } catch(error) {
+        alert(`An error occurred: ${error.message}`); // Translated
+        console.error("Simulation Error:", error); // Translated
+        statusEl.textContent = `Error: ${error.message}`; // Show error in status
+    } finally {
+        simulateBtn.textContent = 'Run AI Simulation';
+        simulateBtn.disabled = false;
+    }
+}
+
+// VISUALIZATION FUNCTION
+function updateVisualizations(resultData) {
+    const physical = resultData.physical_impact;
+    const human = resultData.human_impact_assessment;
+    const inputs = resultData.input_parameters;
+
+    // Update Map
+    impactCircles.forEach(circle => map.removeLayer(circle));
+    impactCircles = [];
+    
+    // UPDATED: New impact radii added
+    const radiiMapping = {
+        crater: { radius_km: physical.crater_diameter_km / 2, color: "#6b21a8", name: "Crater" }, // Translated
+        ejecta: { radius_km: physical.ejecta_blanket_radius_km, color: "#9ca3af", name: "Ejecta Blanket" }, // Translated
+        thermal: { radius_km: physical.thermal_burn_radius_km.second_degree, color: "#f97316", name: "Thermal Effect" }, // Translated
+        blast: { radius_km: physical.air_blast_radius_km.psi_5, color: "#facc15", name: "Air Blast (5 psi)" } // Translated
+    };
+
+    // Sort and draw circles from largest to smallest for correct appearance
+    const sortedRadii = Object.values(radiiMapping).sort((a, b) => b.radius_km - a.radius_km);
+
+    for (const radiusData of sortedRadii) {
+        let radius_m = radiusData.radius_km * 1000;
+        if (radius_m > 0) {
+            const circle = L.circle(impactLatLng, { 
+                radius: radius_m, 
+                color: radiusData.color, 
+                fillColor: radiusData.color, 
+                fillOpacity: 0.3 
+            }).addTo(map).bindPopup(`${radiusData.name}: ${formatNumber(radiusData.radius_km)} km radius`); // Translated popup text
+            impactCircles.push(circle);
+        }
+    }
+
+    if (impactCircles.length > 0) {
+        const largestCircle = impactCircles.reduce((p, c) => p.getRadius() > c.getRadius() ? p : c);
+        map.fitBounds(largestCircle.getBounds(), { padding: [50, 50] });
+    }
+
+    // Populate Result Cards (Unchanged logic, translated text)
+    // ÖZET KISMI ŞİMDİLİK YÜKLEME METNİ İÇERİR
+    document.getElementById('result-summary-text').textContent = 'AI Model is generating a scientific summary... Please wait.'; 
+    
+    const energy_joules = physical.impact_energy_megatons_tnt * 1e6 * KT_TO_JOULES;
+    document.getElementById('res-energy-joules').textContent = formatNumber(energy_joules);
+    document.getElementById('res-tnt-megatons').textContent = formatNumber(physical.impact_energy_megatons_tnt);
+    document.getElementById('res-comparison-hiroshima').textContent = formatNumber(physical.impact_energy_megatons_tnt * 1000 / HIROSHIMA_KT);
+    document.getElementById('res-comparison-tsar').textContent = formatNumber(physical.impact_energy_megatons_tnt / TSAR_BOMBA_MT);
+    
+    const crater_depth_km = physical.crater_diameter_km / 4;
+    const seismic_mag = Math.max(0, (Math.log10(energy_joules) - 4.4) / 1.5);
+    let seismic_desc = "Minor, not felt.";
+    if (seismic_mag > 7) seismic_desc = "Catastrophic damage across a large region.";
+    else if (seismic_mag > 6) seismic_desc = "Major damage to buildings.";
+    else if (seismic_mag > 5) seismic_desc = "Felt by everyone, significant damage.";
+    else if (seismic_mag > 3) seismic_desc = "Felt by many people, minor vibrations.";
+    
+    document.getElementById('res-crater-diameter').textContent = `${formatNumber(physical.crater_diameter_km * 1000)} meters`; // Translated unit
+    document.getElementById('res-crater-depth').textContent = `${formatNumber(crater_depth_km * 1000)} meters`; // Translated unit
+    document.getElementById('res-thermal-radius').textContent = `${formatNumber(physical.thermal_burn_radius_km.second_degree * 1000)} meters`; // Translated unit
+    document.getElementById('res-seismic-mag').textContent = formatNumber(seismic_mag);
+    document.getElementById('res-seismic-desc').textContent = seismic_desc;
+    
+    const populationEl = document.getElementById('res-population');
+    const populationData = human.estimated_population_in_burn_radius;
+    if (typeof populationData === 'number') {
+        populationEl.textContent = formatNumber(populationData);
+        populationEl.classList.remove('text-lg');
+    } else if (typeof populationData === 'string') {
+        populationEl.textContent = populationData;
+        populationEl.classList.add('text-lg');
+    } else if (populationData && populationData.error) {
+        populationEl.textContent = populationData.error;
+        populationEl.classList.add('text-lg');
+    } else {
+        populationEl.textContent = '0';
+        populationEl.classList.remove('text-lg');
+    }
+    document.getElementById('res-population-location').textContent = `for impact at ${human.analysis_location.latitude.toFixed(2)}, ${human.analysis_location.longitude.toFixed(2)}`;
+    
+    let atmo_text = "The object would experience significant ablation during atmospheric transit, but a substantial portion would likely cause a major ground impact."; // Translated
+    if(inputs.mass_kg < 1e7 && inputs.density < 1500) {
+        atmo_text = "This small, low-density body would likely cause an airburst in the upper atmosphere. Ground impact is less probable."; // Translated
+    } else if (inputs.mass_kg > 1e12) {
+        atmo_text = "The object's mass is so large that the Earth's atmosphere would provide negligible resistance. A hypervelocity impact is guaranteed."; // Translated
+    }
+    document.getElementById('res-atmospheric-entry').textContent = atmo_text;
+    
+    document.getElementById('in-mass').textContent = formatNumber(inputs.mass_kg);
+    document.getElementById('in-velocity').textContent = inputs.velocity_kms;
+    document.getElementById('in-angle').textContent = inputs.angle_deg;
+    document.getElementById('in-composition').textContent = Object.keys(DENSITY_MAP).find(key => DENSITY_MAP[key] === inputs.density);
+    
+    document.getElementById('simulation-results').style.display = 'block';
+    document.getElementById('simulation-results').scrollIntoView({ behavior: 'smooth' });
+
+    // **********************************************
+    // ******* YENİ: YAPAY ZEKA ANALİZ ÇAĞRISI *******
+    // **********************************************
+    callAIAnalysis(resultData);
+}
+
+// YENİ FONKSİYON: Yapay Zeka Analizi Çağrısı
+async function callAIAnalysis(resultData) {
+    const analysisSection = document.getElementById('result-summary-text');
+    
+    // Yükleme durumunu göster
+    analysisSection.textContent = 'AI Model is generating a scientific summary... Please wait.'; // Translated
+
+    try {
+        // AI analizi için gönderilecek veri: Fiziksel ve İnsan etkisi bölümleri
+        const payloadForAI = {
+            physical_impact: resultData.physical_impact,
+            human_impact_assessment: resultData.human_impact_assessment,
+            input_parameters: resultData.input_parameters
+        };
+        
+        const response = await fetch("http://127.0.0.1:5001/ai_analyze", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payloadForAI)
+        });
+        
+        const result = await response.json();
+
+        if (response.ok && result.ai_analysis) {
+            // Başarılı olursa AI analizini göster
+            analysisSection.textContent = result.ai_analysis;
+            document.getElementById('simulation-status').textContent = 'Simulation & AI Analysis Complete.'; // Durumu güncelle
+        } else {
+            // Hata olursa
+            analysisSection.textContent = 'AI Analizi Başarısız: ' + (result.error || response.statusText);
+            document.getElementById('simulation-status').textContent = 'Simulation Complete. AI Analysis Failed.'; // Durumu güncelle
+        }
+    } catch (error) {
+        // Bağlantı hatası olursa
+        analysisSection.textContent = `AI Analizi Başarısız: Sunucuya ulaşılamıyor (${error.message})`;
+        document.getElementById('simulation-status').textContent = 'Simulation Complete. AI Analysis Failed.'; // Durumu güncelle
+        console.error("AI Analysis Fetch Error:", error);
+    }
+}
+
+// Map Functions
+function initMap() {
+    map = L.map("map").setView([impactLatLng.lat, impactLatLng.lng], 8);
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", { 
+        maxZoom: 19, 
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+    }).addTo(map);
+    impactMarker = L.marker([impactLatLng.lat, impactLatLng.lng]).addTo(map).bindPopup("Default Impact").openPopup(); // Translated default popup
+    map.on("click", e => {
+        impactLatLng = e.latlng;
+        impactMarker.setLatLng(impactLatLng).setPopupContent(`Selected Point: ${e.latlng.lat.toFixed(2)}, ${e.latlng.lng.toFixed(2)}`).openPopup();
+    });
+
+    const legend = L.control({position: "bottomright"});
+    legend.onAdd = function(map) {
+        const div = L.DomUtil.create("div", "map-legend");
+        div.innerHTML += "<h4>Impact Radii</h4>"; // Translated heading
+        // UPDATED: New impact radii added to legend
+        const grades = {
+            "Crater": "#6b21a8", // Translated
+            "Ejecta Blanket": "#9ca3af", // Translated
+            "Thermal Effect": "#f97316", // Translated
+            "Air Blast (5 psi)": "#facc15" // Translated
+        };
+        for (let label in grades) {
+            div.innerHTML += `<div class="legend-item"><div class="color-box" style="background:${grades[label]}"></div>${label}</div>`;
+        }
+        return div;
+    };
+    legend.addTo(map);
+}
+
+function renderAsteroidList(asteroidsToRender) {
+    const list = document.getElementById('search-results-list');
+    list.innerHTML = ''; 
+    if (!asteroidsToRender || asteroidsToRender.length === 0) {
+        list.innerHTML = '<div class="p-4 text-center text-gray-400">No results found.</div>'; // Translated
+        return;
+    }
+    asteroidsToRender.forEach(a => {
+        if (!a) return;
+        const item = document.createElement('div');
+        item.className = 'result-item';
+        item.innerHTML = `${a.name} <small>(~${formatNumber(a.diameter_m)}m)</small>`;
+        item.dataset.id = a.id;
+        item.addEventListener('click', () => selectAsteroid(a.id));
+        list.appendChild(item);
+    });
+}
+
+// Asteroid Search/Select Functions
+async function handleSearch() {
+    const searchTerm = document.getElementById('search-input').value.trim();
+    const statusEl = document.getElementById('search-status');
+    if (!searchTerm) {
+        renderAsteroidList(wellKnownAsteroids);
+        statusEl.textContent = '';
+        return;
+    }
+    statusEl.textContent = 'Querying API...';
+    try {
+        const response = await fetch(`http://127.0.0.1:5001/lookup_asteroid/${encodeURIComponent(searchTerm)}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `API Error: ${response.status}`);
+        
+        const newAsteroid = {
+            id: data.spk_id,
+            name: data.name,
+            diameter_m: data.estimated_diameter_km.estimated_diameter_max * 1000,
+            velocity_kms: data.velocity_kms,
+            density: DENSITY_MAP['rock'], 
+        };
+
+        if (!allAsteroids.has(newAsteroid.id)) {
+            allAsteroids.set(newAsteroid.id, newAsteroid);
+            statusEl.textContent = `'${newAsteroid.name}' found and added!`; // Translated
+        } else {
+            statusEl.textContent = `'${newAsteroid.name}' already in list.`; // Translated
+        }
+        renderAsteroidList([newAsteroid]);
+        selectAsteroid(newAsteroid.id);
+
+    } catch (error) {
+        statusEl.textContent = `Error: ${error.message}`; // Translated
+        renderAsteroidList([]);
+        console.error("API Search Error:", error); // Translated
+    }
+}
+
+function updateMassForCurrentSelection() {
+    if (!currentSelectedId) return;
+
+    const asteroid = allAsteroids.get(currentSelectedId);
+    if (!asteroid) return;
+
+    if (asteroid.mass_kg) {
+        document.getElementById('mass').value = asteroid.mass_kg;
+        return;
+    }
+
+    const diameter_m = asteroid.diameter_m;
+    if (!diameter_m) {
+        document.getElementById('mass').value = 0;
+        return;
+    }
+    const radius_m = diameter_m / 2;
+    const volume_m3 = (4/3) * Math.PI * Math.pow(radius_m, 3);
+    
+    const selectedComposition = document.getElementById('composition').value;
+    const density = DENSITY_MAP[selectedComposition];
+    
+    const calculatedMass = volume_m3 * density;
+    document.getElementById('mass').value = calculatedMass;
+}
+
+function selectAsteroid(selectedId) {
+    if (!selectedId) return;
+    currentSelectedId = String(selectedId);
+    const selectedAsteroid = allAsteroids.get(currentSelectedId);
+
+    if (selectedAsteroid) {
+        document.getElementById('velocity').value = selectedAsteroid.velocity_kms;
+
+        const density = selectedAsteroid.density;
+        const compositionSelect = document.getElementById('composition');
+        if (density > 5000) compositionSelect.value = 'iron';
+        else if (density < 1500) compositionSelect.value = 'ice';
+        else compositionSelect.value = 'rock';
+        
+        updateMassForCurrentSelection();
+
+        document.querySelectorAll('.result-item').forEach(el => {
+            el.classList.remove('selected');
+            if (el.dataset.id === currentSelectedId) {
+                el.classList.add('selected');
+                el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        });
+    }
+}
+
+// Three.js Meteor Background Code
+function initMeteorBackground() {
+    const backgroundContainer = document.getElementById('meteor-background');
+    if (!backgroundContainer) return;
+
+    sceneBg = new THREE.Scene();
+    cameraBg = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    cameraBg.position.z = 5;
+
+    rendererBg = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    rendererBg.setSize(window.innerWidth, window.innerHeight);
+    backgroundContainer.appendChild(rendererBg.domElement);
+
+    // 🌌 Nebula Shader Material
+    const vertexShader = `
+        varying vec2 vUv;
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    `;
+    const fragmentShader = `
+        uniform float time;
+        varying vec2 vUv;
+
+        float noise(vec2 p) {
+            return sin(p.x) * sin(p.y);
+        }
+
+        void main() {
+            vec2 uv = vUv * 3.0;
+            float n = noise(uv + time * 0.05);
+            vec3 color = vec3(0.05, 0.1, 0.2);
+            color += 0.3 * vec3(0.6, 0.2, 1.0) * n;
+            color += 0.2 * vec3(0.1, 0.5, 1.0) * sin(uv.x * 2.0 + time * 0.3);
+            color += 0.15 * vec3(1.0, 0.5, 0.2) * sin(uv.y * 2.0 - time * 0.4);
+            gl_FragColor = vec4(color, 1.0);
+        }
+    `;
+
+    const uniforms = {
+        time: { value: 0.0 }
+    };
+
+    const material = new THREE.ShaderMaterial({
+        uniforms: uniforms,
+        vertexShader,
+        fragmentShader,
+        side: THREE.DoubleSide
+    });
+
+    const geometry = new THREE.PlaneGeometry(20, 12);
+    spaceMesh = new THREE.Mesh(geometry, material);
+    sceneBg.add(spaceMesh);
+
+    animateNebula(uniforms);
+
+    window.addEventListener('resize', () => {
+        cameraBg.aspect = window.innerWidth / window.innerHeight;
+        cameraBg.updateProjectionMatrix();
+        rendererBg.setSize(window.innerWidth, window.innerHeight);
+    });
+}
+
+function animateNebula(uniforms) {
+    requestAnimationFrame(() => animateNebula(uniforms));
+    uniforms.time.value += 0.05;
+    spaceMesh.rotation.z += 0.0002;
+    rendererBg.render(sceneBg, cameraBg);
+}
+
+// Initialize Nebula
+initMeteorBackground(); // Translated comment
+</script>
+</body>
+</html>
